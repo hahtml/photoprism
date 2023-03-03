@@ -2,13 +2,14 @@ package photoprism
 
 import (
 	"testing"
+	"time"
 
-	"github.com/photoprism/photoprism/internal/face"
-
+	"github.com/dustin/go-humanize/english"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/photoprism/photoprism/internal/classify"
 	"github.com/photoprism/photoprism/internal/config"
+	"github.com/photoprism/photoprism/internal/face"
 	"github.com/photoprism/photoprism/internal/nsfw"
 )
 
@@ -19,7 +20,7 @@ func TestIndex_Start(t *testing.T) {
 
 	conf := config.TestConfig()
 
-	conf.InitializeTestData(t)
+	conf.InitializeTestData()
 
 	tf := classify.New(conf.AssetsPath(), conf.DisableTensorFlow())
 	nd := nsfw.New(conf.NSFWModelPath())
@@ -28,14 +29,37 @@ func TestIndex_Start(t *testing.T) {
 
 	ind := NewIndex(conf, tf, nd, fn, convert, NewFiles(), NewPhotos())
 	imp := NewImport(conf, ind, convert)
-	opt := ImportOptionsMove(conf.ImportPath())
+	opt := ImportOptionsMove(conf.ImportPath(), "")
 
 	imp.Start(opt)
 
 	indexOpt := IndexOptionsAll()
 	indexOpt.Rescan = false
 
-	ind.Start(indexOpt)
+	found, updated := ind.Start(indexOpt)
+	assert.GreaterOrEqual(t, len(found), 0)
+	assert.GreaterOrEqual(t, updated, 0)
+
+	t.Logf("index run 1: found %s", english.Plural(updated, "file", "files"))
+	t.Logf("index run 1: updated %s", english.Plural(updated, "file", "files"))
+
+	time.Sleep(time.Second)
+
+	found, updated = ind.Start(indexOpt)
+	assert.GreaterOrEqual(t, len(found), 0)
+	assert.GreaterOrEqual(t, updated, 0)
+
+	t.Logf("index run 2: found %s", english.Plural(updated, "file", "files"))
+	t.Logf("index run 2: updated %s", english.Plural(updated, "file", "files"))
+
+	time.Sleep(time.Second)
+
+	found, updated = ind.Start(indexOpt)
+	assert.GreaterOrEqual(t, len(found), 0)
+	assert.GreaterOrEqual(t, updated, 0)
+
+	t.Logf("index run 3: found %s", english.Plural(updated, "file", "files"))
+	t.Logf("index run 3: updated %s", english.Plural(updated, "file", "files"))
 }
 
 func TestIndex_File(t *testing.T) {
@@ -45,7 +69,7 @@ func TestIndex_File(t *testing.T) {
 
 	conf := config.TestConfig()
 
-	conf.InitializeTestData(t)
+	conf.InitializeTestData()
 
 	tf := classify.New(conf.AssetsPath(), conf.DisableTensorFlow())
 	nd := nsfw.New(conf.NSFWModelPath())

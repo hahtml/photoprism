@@ -30,7 +30,7 @@ type Camera struct {
 	DeletedAt         *time.Time `sql:"index" json:"-" yaml:"-"`
 }
 
-// TableName returns the entity database table name.
+// TableName returns the entity table name.
 func (Camera) TableName() string {
 	return "cameras"
 }
@@ -138,6 +138,15 @@ func FirstOrCreateCamera(m *Camera) *Camera {
 // String returns an identifier that can be used in logs.
 func (m *Camera) String() string {
 	return clean.Log(m.CameraName)
+}
+
+// Scanner checks whether the model appears to be a scanner.
+func (m *Camera) Scanner() bool {
+	if m.CameraSlug == "" {
+		return false
+	}
+
+	return strings.Contains(m.CameraSlug, "scan")
 }
 
 // Unknown returns true if the camera is not a known make or model.

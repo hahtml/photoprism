@@ -38,14 +38,17 @@
          re-layout all elements in the list when the children of one of them changes
         -->
         <div class="image-container">
-          <div v-if="index < firstVisibleElementIndex || index > lastVisibileElementIndex" class="accent lighten-2 result image" />
+          <div v-if="index < firstVisibleElementIndex || index > lastVisibileElementIndex"
+               :data-uid="photo.UID"
+               class="card darken-1 result image"
+          />
           <div  v-else
                 :key="photo.Hash"
                 tile
                 :data-id="photo.ID"
                 :data-uid="photo.UID"
                 :style="`background-image: url(${photo.thumbnailUrl('tile_224')})`"
-                :class="photo.classes().join(' ') + ' accent lighten-2 result clickable image'"
+                :class="photo.classes().join(' ') + ' card darken-1 result clickable image'"
                 :alt="photo.Title"
                 :title="photo.Title"
                 @contextmenu.stop="onContextMenu($event, index)"
@@ -68,11 +71,12 @@
                   @touchend.stop.prevent="onOpen($event, index, !isSharedView, photo.Type === 'live')"
                   @touchmove.stop.prevent
                   @click.stop.prevent="onOpen($event, index, !isSharedView, photo.Type === 'live')">
-              <i v-if="photo.Type === 'raw'" color="white" class="action-raw" :title="$gettext('RAW')">photo_camera</i>
-              <i v-if="photo.Type === 'live'" color="white" class="action-live" :title="$gettext('Live')"><icon-live-photo/></i>
-              <i v-if="photo.Type === 'animated'" color="white" class="action-animated" :title="$gettext('Animated')">gif</i>
-              <i v-if="photo.Type === 'video'" color="white" class="action-play" :title="$gettext('Video')">play_arrow</i>
-              <i v-if="photo.Type === 'image'" color="white" class="action-stack" :title="$gettext('Stack')">burst_mode</i>
+              <i v-if="photo.Type === 'raw'" class="action-raw" :title="$gettext('RAW')">photo_camera</i>
+              <i v-if="photo.Type === 'live'" class="action-live" :title="$gettext('Live')"><icon-live-photo/></i>
+              <i v-if="photo.Type === 'video'" class="action-play" :title="$gettext('Video')">play_arrow</i>
+              <i v-if="photo.Type === 'animated'" class="action-animated" :title="$gettext('Animated')">gif</i>
+              <i v-if="photo.Type === 'vector'" class="action-vector" :title="$gettext('Vector')">font_download</i>
+              <i v-if="photo.Type === 'image'" class="action-stack" :title="$gettext('Stack')">burst_mode</i>
             </button>
 
             <button v-if="photo.Type === 'image' && selectMode"

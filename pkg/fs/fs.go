@@ -1,7 +1,7 @@
 /*
 Package fs provides filesystem related constants and functions.
 
-Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
+Copyright (c) 2018 - 2023 PhotoPrism UG. All rights reserved.
 
 	This program is free software: you can redistribute it and/or modify
 	it under Version 3 of the GNU Affero General Public License (the "AGPL"):
@@ -14,7 +14,7 @@ Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
 
 	The AGPL is supplemented by our Trademark and Brand Guidelines,
 	which describe how our Brand Assets may be used:
-	<https://photoprism.app/trademark>
+	<https://www.photoprism.app/trademark>
 
 Feel free to send an email to hello@photoprism.app if you have questions,
 want to support our work, or just want to say hello.
@@ -147,7 +147,7 @@ func copyToFile(f *zip.File, dest string) (fileName string, err error) {
 
 	if f.FileInfo().IsDir() {
 		// Make Folder
-		return fileName, os.MkdirAll(fileName, os.ModePerm)
+		return fileName, os.MkdirAll(fileName, ModeDir)
 	}
 
 	// Make File
@@ -157,7 +157,7 @@ func copyToFile(f *zip.File, dest string) (fileName string, err error) {
 		fdir = fileName[:lastIndex]
 	}
 
-	err = os.MkdirAll(fdir, os.ModePerm)
+	err = os.MkdirAll(fdir, ModeDir)
 	if err != nil {
 		return fileName, err
 	}
@@ -179,7 +179,7 @@ func copyToFile(f *zip.File, dest string) (fileName string, err error) {
 
 // Download downloads a file from a URL.
 func Download(filepath string, url string) error {
-	os.MkdirAll("/tmp/photoprism", os.ModePerm)
+	os.MkdirAll("/tmp/photoprism", ModeDir)
 
 	// Create the file
 	out, err := os.Create(filepath)

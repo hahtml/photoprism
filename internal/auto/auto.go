@@ -1,7 +1,7 @@
 /*
 Package auto provides workers for background indexing and import operations.
 
-Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
+Copyright (c) 2018 - 2023 PhotoPrism UG. All rights reserved.
 
 	This program is free software: you can redistribute it and/or modify
 	it under Version 3 of the GNU Affero General Public License (the "AGPL"):
@@ -14,7 +14,7 @@ Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
 
 	The AGPL is supplemented by our Trademark and Brand Guidelines,
 	which describe how our Brand Assets may be used:
-	<https://photoprism.app/trademark>
+	<https://www.photoprism.app/trademark>
 
 Feel free to send an email to hello@photoprism.app if you have questions,
 want to support our work, or just want to say hello.
@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/photoprism/photoprism/internal/config"
-
 	"github.com/photoprism/photoprism/internal/event"
 )
 
@@ -36,9 +35,9 @@ var log = event.Log
 
 var stop = make(chan bool, 1)
 
-// Wait starts waiting for indexing & importing opportunities.
+// Start periodically checks if the library needs to be indexed or files need to be imported.
 func Start(conf *config.Config) {
-	// Don't start ticker if both are disabled.
+	// Do not start the ticker if both are disabled.
 	if conf.AutoIndex().Seconds() <= 0 && conf.AutoImport().Seconds() <= 0 {
 		return
 	}

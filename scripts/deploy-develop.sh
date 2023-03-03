@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-# exit on error
+# Exit on error.
 set -ex
 
-# install QEMU for multi-arch builds
+# Use QEMU for multi-arch builds.
 scripts/install-qemu.sh
 
-# build release images
-make docker-develop-all
+# Build develop images.
+make docker-develop

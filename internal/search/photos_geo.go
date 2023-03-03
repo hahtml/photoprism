@@ -9,9 +9,10 @@ import (
 	"github.com/dustin/go-humanize/english"
 	"github.com/jinzhu/gorm"
 
+	"github.com/photoprism/photoprism/internal/acl"
 	"github.com/photoprism/photoprism/internal/entity"
+	"github.com/photoprism/photoprism/internal/event"
 	"github.com/photoprism/photoprism/internal/form"
-
 	"github.com/photoprism/photoprism/pkg/fs"
 	"github.com/photoprism/photoprism/pkg/pluscode"
 	"github.com/photoprism/photoprism/pkg/rnd"
@@ -19,20 +20,32 @@ import (
 	"github.com/photoprism/photoprism/pkg/txt"
 )
 
-// GeoCols contains the geo query column names.
+// GeoCols specifies the UserPhotosGeo result column names.
 var GeoCols = SelectString(GeoResult{}, []string{"*"})
 
-// PhotosGeo searches for photos based on Form values and returns GeoResults ([]GeoResult).
+// PhotosGeo finds GeoResults based on the search form without checking rights or permissions.
 func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
+	return UserPhotosGeo(f, nil)
+}
+
+// UserPhotosGeo finds photos based on the search form and user session then returns them as GeoResults.
+func UserPhotosGeo(f form.SearchPhotosGeo, sess *entity.Session) (results GeoResults, err error) {
 	start := time.Now()
+
+	// Parse query string and filter.
+	if err = f.ParseQueryString(); err != nil {
+		log.Debugf("search: %s", err)
+		return GeoResults{}, ErrBadRequest
+	}
 
 	S2Levels := 7
 
-	// Search for nearby photos?
+	// Search for nearby photos.
 	if f.Near != "" {
 		photo := Photo{}
 
-		if err := Db().First(&photo, "photo_uid = ?", f.Near).Error; err != nil {
+		// Find photo to get location.
+		if err = Db().First(&photo, "photo_uid = ?", f.Near).Error; err != nil {
 			return GeoResults{}, err
 		}
 
@@ -43,14 +56,133 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		S2Levels = 12
 	}
 
-	s := UnscopedDb()
-
-	// s.LogMode(true)
-
-	s = s.Table("photos").Select(GeoCols).
+	// Specify table names and joins.
+	s := UnscopedDb().Table(entity.Photo{}.TableName()).Select(GeoCols).
 		Joins(`JOIN files ON files.photo_id = photos.id AND files.file_primary = 1 AND files.media_id IS NOT NULL`).
+		Joins("LEFT JOIN places ON photos.place_id = places.id").
 		Where("photos.deleted_at IS NULL").
 		Where("photos.photo_lat <> 0")
+
+	// Accept the album UID as scope for backward compatibility.
+	if rnd.IsUID(f.Album, entity.AlbumUID) {
+		if txt.Empty(f.Scope) {
+			f.Scope = f.Album
+		}
+
+		f.Album = ""
+	}
+
+	// Limit search results to a specific UID scope, e.g. when sharing.
+	if txt.NotEmpty(f.Scope) {
+		f.Scope = strings.ToLower(f.Scope)
+
+		if idType, idPrefix := rnd.IdType(f.Scope); idType != rnd.TypeUID || idPrefix != entity.AlbumUID {
+			return GeoResults{}, ErrInvalidId
+		} else if a, err := entity.CachedAlbumByUID(f.Scope); err != nil || a.AlbumUID == "" {
+			return GeoResults{}, ErrInvalidId
+		} else if a.AlbumFilter == "" {
+			s = s.Joins("JOIN photos_albums ON photos_albums.photo_uid = files.photo_uid").
+				Where("photos_albums.hidden = 0 AND photos_albums.album_uid = ?", a.AlbumUID)
+		} else if err = form.Unserialize(&f, a.AlbumFilter); err != nil {
+			return GeoResults{}, ErrBadFilter
+		} else {
+			f.Filter = a.AlbumFilter
+			s = s.Where("files.photo_uid NOT IN (SELECT photo_uid FROM photos_albums pa WHERE pa.hidden = 1 AND pa.album_uid = ?)", a.AlbumUID)
+		}
+
+		S2Levels = 18
+	} else {
+		f.Scope = ""
+	}
+
+	// Check session permissions and apply as needed.
+	if sess != nil {
+		user := sess.User()
+		aclRole := user.AclRole()
+
+		// Exclude private content.
+		if acl.Resources.Deny(acl.ResourcePlaces, aclRole, acl.AccessPrivate) {
+			f.Public = true
+			f.Private = false
+		}
+
+		// Exclude archived content.
+		if acl.Resources.Deny(acl.ResourcePlaces, aclRole, acl.ActionDelete) {
+			f.Archived = false
+			f.Review = false
+		}
+
+		// Visitors and other restricted users can only access shared content.
+		if f.Scope != "" && !sess.HasShare(f.Scope) && (sess.IsVisitor() || sess.NotRegistered()) ||
+			f.Scope == "" && acl.Resources.Deny(acl.ResourcePlaces, aclRole, acl.ActionSearch) {
+			event.AuditErr([]string{sess.IP(), "session %s", "%s %s as %s", "denied"}, sess.RefID, acl.ActionSearch.String(), string(acl.ResourcePlaces), aclRole)
+			return GeoResults{}, ErrForbidden
+		}
+
+		// Limit results for external users.
+		if f.Scope == "" && acl.Resources.DenyAll(acl.ResourcePlaces, aclRole, acl.Permissions{acl.AccessAll, acl.AccessLibrary}) {
+			sharedAlbums := "photos.photo_uid IN (SELECT photo_uid FROM photos_albums WHERE hidden = 0 AND missing = 0 AND album_uid IN (?)) OR "
+
+			if sess.IsVisitor() || sess.NotRegistered() {
+				s = s.Where(sharedAlbums+"photos.published_at > ?", sess.SharedUIDs(), entity.TimeStamp())
+			} else if basePath := user.GetBasePath(); basePath == "" {
+				s = s.Where(sharedAlbums+"photos.created_by = ? OR photos.published_at > ?", sess.SharedUIDs(), user.UserUID, entity.TimeStamp())
+			} else {
+				s = s.Where(sharedAlbums+"photos.created_by = ? OR photos.published_at > ? OR photos.photo_path = ? OR photos.photo_path LIKE ?",
+					sess.SharedUIDs(), user.UserUID, entity.TimeStamp(), basePath, basePath+"/%")
+			}
+		}
+	}
+
+	// Set sort order.
+	if f.Near == "" {
+		s = s.Order("taken_at, photos.photo_uid")
+	} else {
+		// Sort by distance to UID.
+		s = s.Order(gorm.Expr("(photos.photo_uid = ?) DESC, ABS(? - photos.photo_lat)+ABS(? - photos.photo_lng)", f.Near, f.Lat, f.Lng))
+	}
+
+	// Find specific UIDs only.
+	if txt.NotEmpty(f.UID) {
+		ids := SplitOr(strings.ToLower(f.UID))
+		idType, prefix := rnd.ContainsType(ids)
+
+		if idType == rnd.TypeUnknown {
+			return GeoResults{}, fmt.Errorf("%s ids specified", idType)
+		} else if idType.SHA() {
+			s = s.Where("files.file_hash IN (?)", ids)
+		} else if idType == rnd.TypeUID {
+			switch prefix {
+			case entity.PhotoUID:
+				s = s.Where("photos.photo_uid IN (?)", ids)
+			case entity.FileUID:
+				s = s.Where("files.file_uid IN (?)", ids)
+			default:
+				return GeoResults{}, fmt.Errorf("invalid ids specified")
+			}
+		}
+
+		// Find UIDs only to improve performance.
+		if sess == nil && f.FindUidOnly() {
+			// Fetch results.
+			if result := s.Scan(&results); result.Error != nil {
+				return results, result.Error
+			}
+
+			log.Debugf("places: found %s for %s [%s]", english.Plural(len(results), "result", "results"), f.SerializeAll(), time.Since(start))
+
+			return results, nil
+		}
+	}
+
+	// Find Unique Image ID (Exif), Document ID, or Instance ID (XMP).
+	if txt.NotEmpty(f.ID) {
+		for _, id := range SplitAnd(strings.ToLower(f.ID)) {
+			if ids := SplitOr(id); len(ids) > 0 {
+				s = s.Where("files.instance_id IN (?) OR photos.uuid IN (?)", ids, ids)
+			}
+		}
+	}
 
 	// Set search filters based on search terms.
 	if terms := txt.SearchTerms(f.Query); f.Query != "" && len(terms) == 0 {
@@ -72,8 +204,11 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		case terms["video"]:
 			f.Query = strings.ReplaceAll(f.Query, "video", "")
 			f.Video = true
-		case terms["svg"]:
-			f.Query = strings.ReplaceAll(f.Query, "svg", "")
+		case terms["vectors"]:
+			f.Query = strings.ReplaceAll(f.Query, "vectors", "")
+			f.Vector = true
+		case terms["vector"]:
+			f.Query = strings.ReplaceAll(f.Query, "vector", "")
 			f.Vector = true
 		case terms["animated"]:
 			f.Query = strings.ReplaceAll(f.Query, "animated", "")
@@ -102,10 +237,16 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		case terms["scans"]:
 			f.Query = strings.ReplaceAll(f.Query, "scans", "")
 			f.Scan = true
+		case terms["monochrome"]:
+			f.Query = strings.ReplaceAll(f.Query, "monochrome", "")
+			f.Mono = true
+		case terms["mono"]:
+			f.Query = strings.ReplaceAll(f.Query, "mono", "")
+			f.Mono = true
 		}
 	}
 
-	// Filter by label, label category, and keywords?
+	// Filter by label, label category, and keywords.
 	if f.Query != "" {
 		var categories []entity.Category
 		var labels []entity.Label
@@ -140,15 +281,17 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		}
 	}
 
-	// Search for one or more keywords?
+	// Search for one or more keywords.
 	if f.Keywords != "" {
 		for _, where := range LikeAnyWord("k.keyword", f.Keywords) {
 			s = s.Where("photos.id IN (SELECT pk.photo_id FROM keywords k JOIN photos_keywords pk ON k.id = pk.keyword_id WHERE (?))", gorm.Expr(where))
 		}
 	}
 
-	// Filter by number of faces?
-	if txt.IsUInt(f.Faces) {
+	// Filter by number of faces.
+	if f.Faces == "" {
+		// Do nothing.
+	} else if txt.IsUInt(f.Faces) {
 		s = s.Where("photos.photo_faces >= ?", txt.Int(f.Faces))
 	} else if txt.New(f.Faces) && f.Face == "" {
 		f.Face = f.Faces
@@ -160,7 +303,9 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 	}
 
 	// Filter for specific face clusters? Example: PLJ7A3G4MBGZJRMVDIUCBLC46IAP4N7O
-	if len(f.Face) >= 32 {
+	if f.Face == "" {
+		// Do nothing.
+	} else if len(f.Face) >= 32 {
 		for _, f := range SplitAnd(strings.ToUpper(f.Face)) {
 			s = s.Where(fmt.Sprintf("photos.id IN (SELECT photo_id FROM files f JOIN %s m ON f.file_uid = m.file_uid AND m.marker_invalid = 0 WHERE face_id IN (?))",
 				entity.Marker{}.TableName()), SplitOr(f))
@@ -174,12 +319,15 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 	} else if txt.Yes(f.Face) {
 		s = s.Where(fmt.Sprintf("photos.id IN (SELECT photo_id FROM files f JOIN %s m ON f.file_uid = m.file_uid AND m.marker_invalid = 0 AND m.marker_type = ? WHERE face_id IS NOT NULL AND face_id <> '')",
 			entity.Marker{}.TableName()), entity.MarkerFace)
+	} else if txt.IsUInt(f.Face) {
+		s = s.Where("files.photo_id IN (SELECT photo_id FROM files f JOIN markers m ON f.file_uid = m.file_uid AND m.marker_invalid = 0 AND m.marker_type = ? JOIN faces ON faces.id = m.face_id WHERE m.face_id IS NOT NULL AND m.face_id <> '' AND faces.face_kind = ?)",
+			entity.MarkerFace, txt.Int(f.Face))
 	}
 
-	// Filter for one or more subjects?
+	// Filter for one or more subjects.
 	if f.Subject != "" {
 		for _, subj := range SplitAnd(strings.ToLower(f.Subject)) {
-			if subjects := SplitOr(subj); rnd.ValidIDs(subjects, 'j') {
+			if subjects := SplitOr(subj); rnd.ContainsUID(subjects, 'j') {
 				s = s.Where(fmt.Sprintf("photos.id IN (SELECT photo_id FROM files f JOIN %s m ON f.file_uid = m.file_uid AND m.marker_invalid = 0 WHERE subj_uid IN (?))",
 					entity.Marker{}.TableName()), subjects)
 			} else {
@@ -194,71 +342,66 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		}
 	}
 
-	// Filter by album?
-	if rnd.EntityUID(f.Album, 'a') {
-		if f.Filter != "" {
-			s = s.Where("photos.photo_uid NOT IN (SELECT photo_uid FROM photos_albums pa WHERE pa.hidden = 1 AND pa.album_uid = ?)", f.Album)
-		} else {
-			s = s.Joins("JOIN photos_albums ON photos_albums.photo_uid = photos.photo_uid").
-				Where("photos_albums.hidden = 0 AND photos_albums.album_uid = ?", f.Album)
-		}
-	} else if f.Unsorted && f.Filter == "" {
-		s = s.Where("photos.photo_uid NOT IN (SELECT photo_uid FROM photos_albums pa WHERE pa.hidden = 0)")
-	} else if txt.NotEmpty(f.Album) {
-		v := strings.Trim(f.Album, "*%") + "%"
-		s = s.Where("photos.photo_uid IN (SELECT pa.photo_uid FROM photos_albums pa JOIN albums a ON a.album_uid = pa.album_uid AND pa.hidden = 0 WHERE (a.album_title LIKE ? OR a.album_slug LIKE ?))", v, v)
-	} else if txt.NotEmpty(f.Albums) {
-		for _, where := range LikeAnyWord("a.album_title", f.Albums) {
-			s = s.Where("photos.photo_uid IN (SELECT pa.photo_uid FROM photos_albums pa JOIN albums a ON a.album_uid = pa.album_uid AND pa.hidden = 0 WHERE (?))", gorm.Expr(where))
+	// Find photos in albums or not in an album, unless search results are limited to a scope.
+	if f.Scope == "" {
+		if f.Unsorted {
+			s = s.Where("photos.photo_uid NOT IN (SELECT photo_uid FROM photos_albums pa JOIN albums a ON a.album_uid = pa.album_uid WHERE pa.hidden = 0 AND a.deleted_at IS NULL)")
+		} else if txt.NotEmpty(f.Album) {
+			v := strings.Trim(f.Album, "*%") + "%"
+			s = s.Where("photos.photo_uid IN (SELECT pa.photo_uid FROM photos_albums pa JOIN albums a ON a.album_uid = pa.album_uid AND pa.hidden = 0 WHERE (a.album_title LIKE ? OR a.album_slug LIKE ?))", v, v)
+		} else if txt.NotEmpty(f.Albums) {
+			for _, where := range LikeAnyWord("a.album_title", f.Albums) {
+				s = s.Where("photos.photo_uid IN (SELECT pa.photo_uid FROM photos_albums pa JOIN albums a ON a.album_uid = pa.album_uid AND pa.hidden = 0 WHERE (?))", gorm.Expr(where))
+			}
 		}
 	}
 
-	// Filter by camera?
+	// Filter by camera.
 	if f.Camera > 0 {
 		s = s.Where("photos.camera_id = ?", f.Camera)
 	}
 
-	// Filter by camera lens?
+	// Filter by camera lens.
 	if f.Lens > 0 {
 		s = s.Where("photos.lens_id = ?", f.Lens)
 	}
 
-	// Filter by year?
+	// Filter by year.
 	if f.Year != "" {
 		s = s.Where(AnyInt("photos.photo_year", f.Year, txt.Or, entity.UnknownYear, txt.YearMax))
 	}
 
-	// Filter by month?
+	// Filter by month.
 	if f.Month != "" {
 		s = s.Where(AnyInt("photos.photo_month", f.Month, txt.Or, entity.UnknownMonth, txt.MonthMax))
 	}
 
-	// Filter by day?
+	// Filter by day.
 	if f.Day != "" {
 		s = s.Where(AnyInt("photos.photo_day", f.Day, txt.Or, entity.UnknownDay, txt.DayMax))
 	}
 
-	// Filter by main color?
+	// Filter by main color.
 	if f.Color != "" {
 		s = s.Where("files.file_main_color IN (?)", SplitOr(strings.ToLower(f.Color)))
 	}
 
-	// Find favorites only?
+	// Find favorites only.
 	if f.Favorite {
 		s = s.Where("photos.photo_favorite = 1")
 	}
 
-	// Find scans only?
+	// Find scans only.
 	if f.Scan {
 		s = s.Where("photos.photo_scan = 1")
 	}
 
-	// Find panoramas only?
+	// Find panoramas only.
 	if f.Panorama {
 		s = s.Where("photos.photo_panorama = 1")
 	}
 
-	// Find portrait/landscape/square pictures only?
+	// Find portrait/landscape/square pictures only.
 	if f.Portrait {
 		s = s.Where("files.file_portrait = 1")
 	} else if f.Landscape {
@@ -267,12 +410,22 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		s = s.Where("files.file_aspect_ratio = 1")
 	}
 
-	// Filter by location country?
+	// Filter by location country.
 	if f.Country != "" {
 		s = s.Where("photos.photo_country IN (?)", SplitOr(strings.ToLower(f.Country)))
 	}
 
-	// Filter by media type?
+	// Filter by location state.
+	if txt.NotEmpty(f.State) {
+		s = s.Where("places.place_state IN (?)", SplitOr(f.State))
+	}
+
+	// Filter by location city.
+	if txt.NotEmpty(f.City) {
+		s = s.Where("places.place_city IN (?)", SplitOr(f.City))
+	}
+
+	// Filter by media type.
 	if txt.NotEmpty(f.Type) {
 		s = s.Where("photos.photo_type IN (?)", SplitOr(strings.ToLower(f.Type)))
 	} else if f.Video {
@@ -289,7 +442,7 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		s = s.Where("photos.photo_type IN ('image','raw','live','animated')")
 	}
 
-	// Filter by storage path?
+	// Filter by storage path.
 	if f.Path != "" {
 		p := f.Path
 
@@ -305,7 +458,7 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		}
 	}
 
-	// Filter by primary file name without path and extension?
+	// Filter by primary file name without path and extension.
 	if f.Name != "" {
 		where, names := OrLike("photos.photo_name", f.Name)
 
@@ -317,13 +470,13 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		s = s.Where(where, names...)
 	}
 
-	// Filter by photo title?
+	// Filter by title.
 	if f.Title != "" {
 		where, values := OrLike("photos.photo_title", f.Title)
 		s = s.Where(where, values...)
 	}
 
-	// Filter by status?
+	// Filter by status.
 	if f.Archived {
 		s = s.Where("photos.photo_quality > -1")
 		s = s.Where("photos.deleted_at IS NOT NULL")
@@ -341,6 +494,15 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		} else if f.Quality != 0 && f.Private == false {
 			s = s.Where("photos.photo_quality >= ?", f.Quality)
 		}
+	}
+
+	// Filter by chroma.
+	if f.Mono {
+		s = s.Where("files.file_chroma = 0")
+	} else if f.Chroma > 9 {
+		s = s.Where("files.file_chroma > ?", f.Chroma)
+	} else if f.Chroma > 0 {
+		s = s.Where("files.file_chroma > 0 AND files.file_chroma <= ?", f.Chroma)
 	}
 
 	if f.S2 != "" {
@@ -363,27 +525,21 @@ func PhotosGeo(f form.SearchPhotosGeo) (results GeoResults, err error) {
 		}
 	}
 
-	// Find photos taken before date?
+	// Find photos taken before date.
 	if !f.Before.IsZero() {
 		s = s.Where("photos.taken_at <= ?", f.Before.Format("2006-01-02"))
 	}
 
-	// Find photos taken after date?
+	// Find photos taken after date.
 	if !f.After.IsZero() {
 		s = s.Where("photos.taken_at >= ?", f.After.Format("2006-01-02"))
 	}
 
-	if f.Near == "" {
-		// Default sort order.
-		s = s.Order("taken_at, photos.photo_uid")
-	} else {
-		// Sort by distance to UID.
-		s = s.Order(gorm.Expr("(photos.photo_uid = ?) DESC, ABS(? - photos.photo_lat)+ABS(? - photos.photo_lng)", f.Near, f.Lat, f.Lng))
-	}
-
-	// Limit result count?
+	// Limit offset and count.
 	if f.Count > 0 {
 		s = s.Limit(f.Count).Offset(f.Offset)
+	} else {
+		s = s.Limit(1000000).Offset(f.Offset)
 	}
 
 	// Fetch results.

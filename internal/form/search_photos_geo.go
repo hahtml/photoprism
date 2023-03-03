@@ -1,11 +1,18 @@
 package form
 
-import "time"
+import (
+	"time"
+
+	"github.com/photoprism/photoprism/pkg/fs"
+)
 
 // SearchPhotosGeo represents search form fields for "/api/v1/geo".
 type SearchPhotosGeo struct {
 	Query     string    `form:"q"`
-	Filter    string    `form:"filter"`
+	Scope     string    `form:"s" serialize:"-" example:"s:ariqwb43p5dh9h13" notes:"Limits the results to one album or another scope, if specified"`
+	Filter    string    `form:"filter" serialize:"-" notes:"-"`
+	ID        string    `form:"id" example:"id:123e4567-e89b-..." notes:"Finds pictures by Exif UID, XMP Document ID or Instance ID"`
+	UID       string    `form:"uid" example:"uid:pqbcf5j446s0futy" notes:"Limits results to the specified internal unique IDs"`
 	Near      string    `form:"near"`
 	Type      string    `form:"type"`
 	Path      string    `form:"path"`
@@ -32,21 +39,25 @@ type SearchPhotosGeo struct {
 	Private   bool      `form:"private"`
 	Review    bool      `form:"review"`
 	Quality   int       `form:"quality"`
+	Face      string    `form:"face" notes:"Face ID, yes, no, new, or kind"`
 	Faces     string    `form:"faces"` // Find or exclude faces if detected.
+	Subject   string    `form:"subject"`
 	Lat       float32   `form:"lat"`
 	Lng       float32   `form:"lng"`
 	S2        string    `form:"s2"`
 	Olc       string    `form:"olc"`
 	Dist      uint      `form:"dist"`
-	Face      string    `form:"face"`     // UIDs
-	Subject   string    `form:"subject"`  // UIDs
 	Person    string    `form:"person"`   // Alias for Subject
 	Subjects  string    `form:"subjects"` // Text
 	People    string    `form:"people"`   // Alias for Subjects
+	Chroma    int16     `form:"chroma" example:"chroma:70" notes:"Chroma (0-100)"`
+	Mono      bool      `form:"mono" notes:"Finds pictures with few or no colors"`
 	Keywords  string    `form:"keywords"`
-	Album     string    `form:"album"`
-	Albums    string    `form:"albums"`
+	Album     string    `form:"album" example:"album:berlin" notes:"Album UID or Name, supports * wildcards"`
+	Albums    string    `form:"albums" example:"albums:\"South Africa & Birds\"" notes:"Album Names, can be combined with & and |"`
 	Country   string    `form:"country"`
+	State     string    `form:"state"` // Moments
+	City      string    `form:"city"`
 	Year      string    `form:"year"`  // Moments
 	Month     string    `form:"month"` // Moments
 	Day       string    `form:"day"`   // Moments
@@ -98,6 +109,11 @@ func (f *SearchPhotosGeo) ParseQueryString() error {
 		}
 	}
 
+	// Strip file extensions if any.
+	if f.Name != "" {
+		f.Name = fs.StripKnownExt(f.Name)
+	}
+
 	return err
 }
 
@@ -111,6 +127,11 @@ func (f *SearchPhotosGeo) SerializeAll() string {
 	return Serialize(f, true)
 }
 
-func NewGeoSearch(query string) SearchPhotosGeo {
+// FindUidOnly checks if search filters other than UID may be skipped to improve performance.
+func (f *SearchPhotosGeo) FindUidOnly() bool {
+	return f.UID != "" && f.Query == "" && f.Scope == "" && f.Filter == "" && f.Album == "" && f.Albums == ""
+}
+
+func NewSearchPhotosGeo(query string) SearchPhotosGeo {
 	return SearchPhotosGeo{Query: query}
 }

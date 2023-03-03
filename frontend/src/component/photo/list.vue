@@ -31,16 +31,16 @@
           <thead>
             <tr>
               <th class="p-col-select" />
-              <th :class="!$rtl ? 'text-xs-left' : 'text-xs-right'">
+              <th class="text-xs-left">
                 {{$gettext('Title')}}
               </th>
-              <th :class="!$rtl ? 'text-xs-left' : 'text-xs-right'" class="hidden-xs-only">
+              <th class="text-xs-left hidden-xs-only">
                 {{$gettext('Taken')}}
               </th>
-              <th :class="!$rtl ? 'text-xs-left' : 'text-xs-right'" class="hidden-sm-and-down">
+              <th class="text-xs-left hidden-sm-and-down">
                 {{$gettext('Camera')}}
               </th>
-              <th :class="!$rtl ? 'text-xs-left' : 'text-xs-right'" class="hidden-xs-only">
+              <th class="text-xs-left hidden-xs-only">
                 {{showName ? $gettext('Name') : $gettext('Location')}}
               </th>
               <th class="text-xs-center hidden-xs-only" />
@@ -52,14 +52,14 @@
                 <div
                     v-if="index < firstVisibleElementIndex || index > lastVisibileElementIndex"
                     :key="photo.Hash"
-                    class="image accent lighten-2"
+                    class="image card darken-1"
                 />
                 <div
                       v-else
                       :key="photo.Hash"
                       :alt="photo.Title"
                       :style="`background-image: url(${photo.thumbnailUrl('tile_50')})`"
-                      class="accent lighten-2 clickable image"
+                      class="card darken-1 clickable image"
                       @touchstart="onMouseDown($event, index)"
                       @touchend.stop.prevent="onClick($event, index)"
                       @mousedown="onMouseDown($event, index)"
@@ -75,6 +75,7 @@
                         @click.stop.prevent="openPhoto(index, false, photo.Type === 'live')">
                     <i v-if="photo.Type === 'live'" class="action-live" :title="$gettext('Live')"><icon-live-photo/></i>
                     <i v-if="photo.Type === 'animated'" class="action-animated" :title="$gettext('Animated')">gif</i>
+                    <i v-if="photo.Type === 'vector'" class="action-vector" :title="$gettext('Vector')">font_download</i>
                     <i v-if="photo.Type === 'video'" class="action-play" :title="$gettext('Video')">play_arrow</i>
                   </button>
                 </div>
@@ -264,7 +265,7 @@ export default {
       Notify.success(this.$gettext("Downloading…"));
 
       const photo = this.photos[index];
-      download(`${this.$config.apiUri}/dl/${photo.Hash}?t=${this.$config.downloadToken()}`, photo.FileName);
+      download(`${this.$config.apiUri}/dl/${photo.Hash}?t=${this.$config.downloadToken}`, photo.FileName);
     },
     onSelect(ev, index) {
       if (ev.shiftKey) {

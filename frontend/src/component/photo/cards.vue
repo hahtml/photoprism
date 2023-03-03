@@ -33,8 +33,11 @@
           :data-index="index"
           class="flex xs12 sm6 md4 lg3 xlg2 xxxl1 d-flex"
       >
-        <div v-if="index < firstVisibleElementIndex || index > lastVisibileElementIndex" class="accent lighten-3 result placeholder">
-          <div class="accent lighten-2 image"/>
+        <div v-if="index < firstVisibleElementIndex || index > lastVisibileElementIndex"
+             :data-uid="photo.UID"
+             class="card result placeholder"
+        >
+          <div class="card darken-1 image"/>
           <div v-if="photo.Quality < 3 && context === 'review'" style="width: 100%; height: 34px"/>
           <div class="pa-3 card-details">
             <div>
@@ -70,17 +73,15 @@
           </div>
         </div>
         <div v-else
-              tile
               :data-id="photo.ID"
               :data-uid="photo.UID"
-              class="result accent lighten-3"
+              class="result card"
               :class="photo.classes()"
               @contextmenu.stop="onContextMenu($event, index)">
-          <div class="card-background accent lighten-3"></div>
+          <div class="card-background card"></div>
           <div :key="photo.Hash"
-                :alt="photo.Title"
                 :title="photo.Title"
-                class="accent lighten-2 clickable image"
+                class="card darken-1 clickable image"
                 :style="`background-image: url(${photo.thumbnailUrl('tile_500')})`"
                 @touchstart.passive="input.touchStart($event, index)"
                 @touchend.stop.prevent="onClick($event, index)"
@@ -104,8 +105,9 @@
                   @click.stop.prevent="onOpen($event, index, !isSharedView, photo.Type === 'live')">
                 <i v-if="photo.Type === 'raw'" class="action-raw" :title="$gettext('RAW')">photo_camera</i>
                 <i v-if="photo.Type === 'live'" class="action-live" :title="$gettext('Live')"><icon-live-photo/></i>
-                <i v-if="photo.Type === 'animated'" class="action-animated" :title="$gettext('Animated')">gif</i>
                 <i v-if="photo.Type === 'video'" class="action-play" :title="$gettext('Video')">play_arrow</i>
+                <i v-if="photo.Type === 'animated'" class="action-animated" :title="$gettext('Animated')">gif</i>
+                <i v-if="photo.Type === 'vector'" class="action-vector" :title="$gettext('Vector')">font_download</i>
                 <i v-if="photo.Type === 'image'" class="action-stack" :title="$gettext('Stack')">burst_mode</i>
             </button>
 
@@ -158,7 +160,7 @@
           <v-card-actions v-if="!isSharedView && photo.Quality < 3 && context === 'review'" class="card-details pa-0">
             <v-layout row wrap align-center>
               <v-flex xs6 class="text-xs-center pa-1">
-                <v-btn color="accent lighten-2"
+                <v-btn color="card darken-1"
                       small depressed dark block :round="false"
                       class="action-archive text-xs-center"
                       :title="$gettext('Archive')" @click.stop="photo.archive()">
@@ -166,7 +168,7 @@
                 </v-btn>
               </v-flex>
               <v-flex xs6 class="text-xs-center pa-1">
-                <v-btn color="accent lighten-2"
+                <v-btn color="card darken-1"
                       small depressed dark block :round="false"
                       class="action-approve text-xs-center"
                       :title="$gettext('Approve')" @click.stop="photo.approve()">
@@ -185,36 +187,41 @@
                 </button>
               </h3>
               <div v-if="photo.Description" class="caption mb-2" :title="$gettext('Description')">
-                <button @[!isSharedView&&`click`].exact="editPhoto(index)">
+                <button @click.exact="editPhoto(index)">
                   {{ photo.Description }}
                 </button>
               </div>
               <div class="caption">
                 <button class="action-date-edit" :data-uid="photo.UID"
-                        @[!isSharedView&&`click`].exact="editPhoto(index)">
+                        @click.exact="editPhoto(index)">
                   <i :title="$gettext('Taken')">date_range</i>
                   {{ photo.getDateString(true) }}
                 </button>
                 <br>
                 <button v-if="photo.Type === 'video'" :title="$gettext('Video')"
-                        @[!isSharedView&&`click`].exact="openPhoto(index)">
+                        @click.exact="openPhoto(index)">
                   <i>movie</i>
                   {{ photo.getVideoInfo() }}
                 </button>
                 <button v-else-if="photo.Type === 'animated'" :title="$gettext('Animated')+' GIF'"
-                        @[!isSharedView&&`click`].exact="openPhoto(index)">
+                        @click.exact="openPhoto(index)">
                   <i>gif_box</i>
                   {{ photo.getVideoInfo() }}
                 </button>
+                <button v-else-if="photo.Type === 'vector'" :title="$gettext('Vector')"
+                        @click.exact="openPhoto(index)">
+                  <i>font_download</i>
+                  {{ photo.getVectorInfo() }}
+                </button>
                 <button v-else :title="$gettext('Camera')" class="action-camera-edit"
-                        :data-uid="photo.UID" @[!isSharedView&&`click`].exact="editPhoto(index)">
+                        :data-uid="photo.UID" @click.exact="editPhoto(index)">
                   <i>photo_camera</i>
                   {{ photo.getPhotoInfo() }}
                 </button>
                 <template v-if="filter.order === 'name' && $config.feature('download')">
                   <br>
                   <button :title="$gettext('Name')"
-                          @[!isSharedView&&`click`].exact="downloadFile(index)">
+                          @click.exact="downloadFile(index)">
                     <i>insert_drive_file</i>
                     {{ photo.baseName() }}
                   </button>
@@ -222,7 +229,7 @@
                 <template v-if="featPlaces && photo.Country !== 'zz'">
                   <br>
                   <button :title="$gettext('Location')" class="action-location"
-                          :data-uid="photo.UID" @[!isSharedView&&`click`].exact="openLocation(index)">
+                          :data-uid="photo.UID" @click.exact="openLocation(index)">
                     <i>location_on</i>
                     {{ photo.locationInfo() }}
                   </button>
@@ -266,13 +273,11 @@ export default {
     },
     album: {
       type: Object,
-      default: () => {
-      },
+      default: () => {},
     },
     filter: {
       type: Object,
-      default: () => {
-      },
+      default: () => {},
     },
     context: {
       type: String,
@@ -346,7 +351,7 @@ export default {
       );
 
       // we observe only every 5th item, so we increase the rendered
-      // range here by 4 items in every directio just to be safe
+      // range here by 4 items in every direction just to be safe
       this.firstVisibleElementIndex = smallestIndex - 4;
       this.lastVisibileElementIndex = largestIndex + 4;
     },
@@ -373,7 +378,7 @@ export default {
       Notify.success(this.$gettext("Downloading…"));
 
       const photo = this.photos[index];
-      download(`${this.$config.apiUri}/dl/${photo.Hash}?t=${this.$config.downloadToken()}`, photo.FileName);
+      download(`${this.$config.apiUri}/dl/${photo.Hash}?t=${this.$config.downloadToken}`, photo.FileName);
     },
     toggleLike(ev, index) {
       const inputType = this.input.eval(ev, index);

@@ -1,7 +1,7 @@
 /*
 Package webdav provides WebDAV file sharing and synchronization.
 
-Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
+Copyright (c) 2018 - 2023 PhotoPrism UG. All rights reserved.
 
 	This program is free software: you can redistribute it and/or modify
 	it under Version 3 of the GNU Affero General Public License (the "AGPL"):
@@ -14,7 +14,7 @@ Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
 
 	The AGPL is supplemented by our Trademark and Brand Guidelines,
 	which describe how our Brand Assets may be used:
-	<https://photoprism.app/trademark>
+	<https://www.photoprism.app/trademark>
 
 Feel free to send an email to hello@photoprism.app if you have questions,
 want to support our work, or just want to say hello.
@@ -25,6 +25,7 @@ Additional information can be found in our Developer Guide:
 package webdav
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path"
@@ -193,7 +194,7 @@ func (c Client) Download(from, to string, force bool) (err error) {
 
 	if err != nil {
 		// Create local storage path.
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		if err := os.MkdirAll(dir, fs.ModeDir); err != nil {
 			return fmt.Errorf("webdav: cannot create folder %s (%s)", clean.Log(dir), err)
 		}
 	} else if !dirInfo.IsDir() {
@@ -212,7 +213,7 @@ func (c Client) Download(from, to string, force bool) (err error) {
 	}
 
 	// Write data to file and return.
-	return os.WriteFile(to, bytes, os.ModePerm)
+	return os.WriteFile(to, bytes, fs.ModeFile)
 }
 
 // DownloadDir downloads all files from a remote to a local directory.
@@ -261,7 +262,7 @@ func (c Client) CreateDir(dir string) error {
 		return nil
 	}
 
-	return c.client.MkdirAll(dir, os.ModePerm)
+	return c.client.MkdirAll(dir, fs.ModeDir)
 }
 
 // Upload uploads a single file to the remote server.
@@ -274,15 +275,17 @@ func (c Client) Upload(from, to string) (err error) {
 
 	file, err := os.Open(from)
 
-	if err != nil || file == nil {
+	if err != nil {
 		return err
 	}
 
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
+	defer file.Close()
 
-	return c.client.WriteStream(to, file, os.ModePerm)
+	reader := bufio.NewReader(file)
+
+	err = c.client.WriteStream(to, reader, fs.ModeFile)
+
+	return err
 }
 
 // Delete deletes a single file or directory on a remote server.

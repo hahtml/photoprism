@@ -18,8 +18,8 @@ func AvcConvertCommand(fileName, avcName, ffmpegBin, bitrate string, encoder Avc
 	// Don't transcode more than one video at the same time.
 	useMutex = true
 
-	// Animated GIF?
-	if fs.FileType(fileName) == fs.ImageGIF {
+	// Don't use hardware transcoding for animated images.
+	if fs.TypeAnimated[fs.FileType(fileName)] != "" {
 		result = exec.Command(
 			ffmpegBin,
 			"-i", fileName,
@@ -50,6 +50,7 @@ func AvcConvertCommand(fileName, avcName, ffmpegBin, bitrate string, encoder Avc
 			"-c:a", "aac",
 			"-vf", format,
 			"-c:v", string(encoder),
+			"-map", "0:v:0",
 			"-vsync", "vfr",
 			"-r", "30",
 			"-b:v", bitrate,
@@ -66,6 +67,7 @@ func AvcConvertCommand(fileName, avcName, ffmpegBin, bitrate string, encoder Avc
 			ffmpegBin,
 			"-i", fileName,
 			"-c:v", string(encoder),
+			"-map", "0:v:0",
 			"-c:a", "aac",
 			"-vf", format,
 			"-profile", "high",
@@ -78,13 +80,33 @@ func AvcConvertCommand(fileName, avcName, ffmpegBin, bitrate string, encoder Avc
 			avcName,
 		)
 
+	case VAAPIEncoder:
+		format := "format=nv12,hwupload"
+		result = exec.Command(
+			ffmpegBin,
+			"-hwaccel", "vaapi",
+			"-i", fileName,
+			"-c:a", "aac",
+			"-vf", format,
+			"-c:v", string(encoder),
+			"-map", "0:v:0",
+			"-vsync", "vfr",
+			"-r", "30",
+			"-b:v", bitrate,
+			"-f", "mp4",
+			"-y",
+			avcName,
+		)
+
 	case NvidiaEncoder:
 		// ffmpeg -hide_banner -h encoder=h264_nvenc
 		result = exec.Command(
 			ffmpegBin,
+			"-hwaccel", "auto",
 			"-i", fileName,
 			"-pix_fmt", "yuv420p",
 			"-c:v", string(encoder),
+			"-map", "0:v:0",
 			"-c:a", "aac",
 			"-preset", "15",
 			"-pixel_format", "yuv420p",
@@ -96,7 +118,7 @@ func AvcConvertCommand(fileName, avcName, ffmpegBin, bitrate string, encoder Avc
 			"-r", "30",
 			"-b:v", bitrate,
 			"-profile:v", "1",
-			"-level:v", "41",
+			"-level:v", "auto",
 			"-coder:v", "1",
 			"-f", "mp4",
 			"-y",
@@ -110,6 +132,7 @@ func AvcConvertCommand(fileName, avcName, ffmpegBin, bitrate string, encoder Avc
 			ffmpegBin,
 			"-i", fileName,
 			"-c:v", string(encoder),
+			"-map", "0:v:0",
 			"-c:a", "aac",
 			"-vf", format,
 			"-num_output_buffers", "72",
@@ -130,6 +153,7 @@ func AvcConvertCommand(fileName, avcName, ffmpegBin, bitrate string, encoder Avc
 			ffmpegBin,
 			"-i", fileName,
 			"-c:v", string(encoder),
+			"-map", "0:v:0",
 			"-c:a", "aac",
 			"-vf", format,
 			"-max_muxing_queue_size", "1024",

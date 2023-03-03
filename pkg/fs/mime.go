@@ -1,41 +1,74 @@
 package fs
 
 import (
-	"os"
+	"path/filepath"
+	"strings"
 
-	"github.com/h2non/filetype"
+	"github.com/gabriel-vasile/mimetype"
 )
 
 const (
-	MimeTypeJpeg   = "image/jpeg"
-	MimeTypePng    = "image/png"
-	MimeTypeGif    = "image/gif"
-	MimeTypeBitmap = "image/bmp"
-	MimeTypeWebP   = "image/webp"
-	MimeTypeTiff   = "image/tiff"
-	MimeTypeHEIF   = "image/heif"
+	MimeTypeUnknown = ""
+	MimeTypeJPEG    = "image/jpeg"
+	MimeTypeJPEGXL  = "image/jxl"
+	MimeTypePNG     = "image/png"
+	MimeTypeAPNG    = "image/vnd.mozilla.apng"
+	MimeTypeGIF     = "image/gif"
+	MimeTypeBMP     = "image/bmp"
+	MimeTypeTIFF    = "image/tiff"
+	MimeTypeDNG     = "image/dng"
+	MimeTypeAVIF    = "image/avif"
+	MimeTypeAVIFS   = "image/avif-sequence"
+	MimeTypeHEIC    = "image/heic"
+	MimeTypeHEICS   = "image/heic-sequence"
+	MimeTypeWebP    = "image/webp"
+	MimeTypeMP4     = "video/mp4"
+	MimeTypeMOV     = "video/quicktime"
+	MimeTypeSVG     = "image/svg+xml"
+	MimeTypeAI      = "application/vnd.adobe.illustrator"
+	MimeTypePS      = "application/ps"
+	MimeTypeEPS     = "image/eps"
+	MimeTypeXML     = "text/xml"
+	MimeTypeJSON    = "application/json"
 )
 
-// MimeType returns the mime type of a file, an empty string if it is unknown.
-func MimeType(filename string) string {
-	handle, err := os.Open(filename)
-
-	if err != nil {
-		return ""
+// MimeType returns the mime type of a file, or an empty string if it could not be detected.
+func MimeType(filename string) (mimeType string) {
+	if filename == "" {
+		return MimeTypeUnknown
 	}
 
-	defer handle.Close()
+	// Workaround for types that cannot be reliably detected.
+	switch Extensions[strings.ToLower(filepath.Ext(filename))] {
+	case ImageDNG:
+		return MimeTypeDNG
+	case ImageAVIF:
+		return MimeTypeAVIF
+	case ImageAVIFS:
+		return MimeTypeAVIFS
+	case ImageHEIC:
+		return MimeTypeHEIC
+	case ImageHEICS:
+		return MimeTypeHEICS
+	case VideoMP4:
+		return MimeTypeMP4
+	case VideoMOV:
+		return MimeTypeMOV
+	case VectorSVG:
+		return MimeTypeSVG
+	case VectorAI:
+		return MimeTypeAI
+	case VectorPS:
+		return MimeTypePS
+	case VectorEPS:
+		return MimeTypeEPS
+	}
 
-	// Only the first 261 bytes are used to sniff the content type.
-	buffer := make([]byte, 261)
-
-	if _, err := handle.Read(buffer); err != nil {
-		return ""
-	} else if t, err := filetype.Get(buffer); err == nil && t != filetype.Unknown {
-		return t.MIME.Value
-	} else if t := filetype.GetType(NormalizedExt(filename)); t != filetype.Unknown {
-		return t.MIME.Value
+	if t, err := mimetype.DetectFile(filename); err != nil {
+		return MimeTypeUnknown
 	} else {
-		return ""
+		mimeType, _, _ = strings.Cut(t.String(), ";")
 	}
+
+	return mimeType
 }

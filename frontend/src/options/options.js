@@ -2,7 +2,14 @@ import { timeZonesNames } from "@vvo/tzdb";
 import { $gettext } from "common/vm";
 import { Info } from "luxon";
 import { config } from "app/session";
-import { MediaAnimated, MediaImage, MediaLive, MediaRaw, MediaVideo } from "model/photo";
+import {
+  MediaImage,
+  MediaLive,
+  MediaVideo,
+  MediaAnimated,
+  MediaVector,
+  MediaRaw,
+} from "model/photo";
 
 export const TimeZones = () =>
   [
@@ -87,6 +94,10 @@ export const Languages = () => [
     value: "en",
   },
   {
+    text: "Afrikaans", // Afrikaans (South Africa)
+    value: "af",
+  },
+  {
     text: "Bahasa Indonesia", // Bahasa Indonesia
     value: "id",
   },
@@ -105,6 +116,10 @@ export const Languages = () => [
   {
     text: "Deutsch", // German
     value: "de",
+  },
+  {
+    text: "Eesti", // Estonian
+    value: "et",
   },
   {
     text: "Español", // Spanish
@@ -168,6 +183,10 @@ export const Languages = () => [
     value: "sk",
   },
   {
+    text: "Slovenščina", // Slovene
+    value: "sl",
+  },
+  {
     text: "Suomi", // Finnish
     value: "fi",
   },
@@ -194,7 +213,11 @@ export const Languages = () => [
     rtl: true,
   },
   {
-    text: "български", // Bulgarian
+    text: "Беларуская", // Belarusian
+    value: "be",
+  },
+  {
+    text: "Български", // Bulgarian
     value: "bg",
   },
   {
@@ -210,7 +233,7 @@ export const Languages = () => [
     value: "zh",
   },
   {
-    text: "繁体中文", // Chinese (Traditional)
+    text: "繁體中文", // Chinese (Traditional)
     value: "zh_TW",
   },
   {
@@ -228,6 +251,11 @@ export const Languages = () => [
   {
     text: "ภาษาไทย", // Thai
     value: "th",
+  },
+  {
+    text: "فارسی", // Persian
+    value: "fa",
+    rtl: true,
   },
 ];
 
@@ -252,7 +280,11 @@ export const MapsAnimate = () => [
 
 export const MapsStyle = () => [
   {
-    text: $gettext("Offline"),
+    text: $gettext("Default"),
+    value: "",
+  },
+  {
+    text: $gettext("Low Resolution"),
     value: "offline",
   },
   {
@@ -261,18 +293,18 @@ export const MapsStyle = () => [
     sponsor: true,
   },
   {
-    text: $gettext("Hybrid"),
+    text: $gettext("Satellite"),
     value: "hybrid",
-    sponsor: true,
-  },
-  {
-    text: $gettext("Topographic"),
-    value: "topographique",
     sponsor: true,
   },
   {
     text: $gettext("Outdoor"),
     value: "outdoor",
+    sponsor: true,
+  },
+  {
+    text: $gettext("Topographic"),
+    value: "topographique",
     sponsor: true,
   },
 ];
@@ -283,12 +315,12 @@ export const PhotoTypes = () => [
     value: MediaImage,
   },
   {
-    text: $gettext("Animated"),
-    value: MediaAnimated,
-  },
-  {
     text: $gettext("Raw"),
     value: MediaRaw,
+  },
+  {
+    text: $gettext("Animated"),
+    value: MediaAnimated,
   },
   {
     text: $gettext("Live"),
@@ -297,6 +329,10 @@ export const PhotoTypes = () => [
   {
     text: $gettext("Video"),
     value: MediaVideo,
+  },
+  {
+    text: $gettext("Vector"),
+    value: MediaVector,
   },
 ];
 
@@ -400,4 +436,10 @@ export const ThumbFilters = () => [
   { value: "lanczos", text: $gettext("Lanczos: Detail Preservation, Minimal Artifacts") },
   { value: "cubic", text: $gettext("Cubic: Moderate Quality, Good Performance") },
   { value: "linear", text: $gettext("Linear: Very Smooth, Best Performance") },
+];
+
+export const Gender = () => [
+  { value: "male", text: $gettext("Male") },
+  { value: "female", text: $gettext("Female") },
+  { value: "other", text: $gettext("Other") },
 ];

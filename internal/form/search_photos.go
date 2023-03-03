@@ -2,13 +2,17 @@ package form
 
 import (
 	"time"
+
+	"github.com/photoprism/photoprism/pkg/fs"
 )
 
 // SearchPhotos represents search form fields for "/api/v1/photos".
 type SearchPhotos struct {
 	Query     string    `form:"q"`
-	Filter    string    `form:"filter" notes:"-" serialize:"-"`
-	UID       string    `form:"uid" example:"uid:pqbcf5j446s0futy" notes:"Internal Unique ID, only exact matches"`
+	Scope     string    `form:"s" serialize:"-" example:"s:ariqwb43p5dh9h13" notes:"Limits the results to one album or another scope, if specified"`
+	Filter    string    `form:"filter" serialize:"-" notes:"-"`
+	ID        string    `form:"id" example:"id:123e4567-e89b-..." notes:"Finds pictures by Exif UID, XMP Document ID or Instance ID"`
+	UID       string    `form:"uid" example:"uid:pqbcf5j446s0futy" notes:"Limits results to the specified internal unique IDs"`
 	Type      string    `form:"type" example:"type:raw" notes:"Media Type (image, video, raw, live, animated); OR search with |"`
 	Path      string    `form:"path" example:"path:2020/Holiday" notes:"Path Name, OR search with |, supports * wildcards"`
 	Folder    string    `form:"folder" example:"folder:\"*/2020\"" notes:"Path Name, OR search with |, supports * wildcards"` // Alias for Path
@@ -53,10 +57,12 @@ type SearchPhotos struct {
 	Category  string    `form:"category"  notes:"Location Category Name"`                                                                                                                                             // Moments
 	Country   string    `form:"country" example:"country:\"de|us\"" notes:"Country Code, OR search with |"`                                                                                                           // Moments
 	State     string    `form:"state" example:"state:\"Baden-Württemberg\"" notes:"Name of State (Location), OR search with |"`                                                                                       // Moments
+	City      string    `form:"city" example:"city:\"Berlin\"" notes:"Name of City (Location), OR search with |"`                                                                                                     // Moments
 	Year      string    `form:"year" example:"year:1990|2003" notes:"Year Number, OR search with |"`                                                                                                                  // Moments
 	Month     string    `form:"month" example:"month:7|10" notes:"Month (1-12), OR search with |"`                                                                                                                    // Moments
 	Day       string    `form:"day" example:"day:3|13" notes:"Day of Month (1-31), OR search with |"`                                                                                                                 // Moments
-	Face      string    `form:"face" example:"face:PN6QO5INYTUSAATOFL43LL2ABAV5ACZG" notes:"Face ID"`                                                                                                                 // UIDs
+	Face      string    `form:"face" example:"face:PN6QO5INYTUSAATOFL43LL2ABAV5ACZG" notes:"Face ID, yes, no, new, or kind"`                                                                                          // UIDs
+	Faces     string    `form:"faces" example:"faces:yes faces:3" notes:"Minimum number of Faces (yes = 1)"`                                                                                                          // Find or exclude faces if detected.
 	Subject   string    `form:"subject" example:"subject:\"Jane Doe & John Doe\"" notes:"Alias for person"`                                                                                                           // UIDs
 	Person    string    `form:"person" example:"person:\"Jane Doe & John Doe\"" notes:"Subject Names, exact matches, can be combined with & and |"`                                                                   // Alias for Subject
 	Subjects  string    `form:"subjects" example:"subjects:\"Jane & John\"" notes:"Alias for people"`                                                                                                                 // People names
@@ -64,7 +70,6 @@ type SearchPhotos struct {
 	Album     string    `form:"album" example:"album:berlin" notes:"Album UID or Name, supports * wildcards"`                                                                                                         // Album UIDs or name
 	Albums    string    `form:"albums" example:"albums:\"South Africa & Birds\"" notes:"Album Names, can be combined with & and |"`                                                                                   // Multi search with and/or
 	Color     string    `form:"color" example:"color:\"red|blue\"" notes:"Color Name (purple, magenta, pink, red, orange, gold, yellow, lime, green, teal, cyan, blue, brown, white, grey, black), OR search with |"` // Main color
-	Faces     string    `form:"faces" example:"faces:yes faces:3" notes:"Minimum number of Faces (yes = 1)"`                                                                                                          // Find or exclude faces if detected.
 	Quality   int       `form:"quality" notes:"Quality Score (0-7)"`                                                                                                                                                  // Photo quality score
 	Review    bool      `form:"review" notes:"Finds pictures in review"`                                                                                                                                              // Find photos in review
 	Camera    string    `form:"camera" example:"camera:canon" notes:"Camera Make/Model Name"`                                                                                                                         // Camera UID or name
@@ -117,6 +122,11 @@ func (f *SearchPhotos) ParseQueryString() error {
 		}
 	}
 
+	// Strip file extensions if any.
+	if f.Name != "" {
+		f.Name = fs.StripKnownExt(f.Name)
+	}
+
 	return nil
 }
 
@@ -130,6 +140,11 @@ func (f *SearchPhotos) SerializeAll() string {
 	return Serialize(f, true)
 }
 
-func NewPhotoSearch(query string) SearchPhotos {
+// FindUidOnly checks if search filters other than UID may be skipped to improve performance.
+func (f *SearchPhotos) FindUidOnly() bool {
+	return f.UID != "" && f.Query == "" && f.Scope == "" && f.Filter == "" && f.Album == "" && f.Albums == ""
+}
+
+func NewSearchPhotos(query string) SearchPhotos {
 	return SearchPhotos{Query: query}
 }

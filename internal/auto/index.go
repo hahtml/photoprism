@@ -8,10 +8,10 @@ import (
 	"github.com/photoprism/photoprism/internal/api"
 	"github.com/photoprism/photoprism/internal/entity"
 	"github.com/photoprism/photoprism/internal/event"
+	"github.com/photoprism/photoprism/internal/get"
 	"github.com/photoprism/photoprism/internal/i18n"
 	"github.com/photoprism/photoprism/internal/mutex"
 	"github.com/photoprism/photoprism/internal/photoprism"
-	"github.com/photoprism/photoprism/internal/service"
 )
 
 var autoIndex = time.Time{}
@@ -42,45 +42,47 @@ func mustIndex(delay time.Duration) bool {
 	indexMutex.Lock()
 	defer indexMutex.Unlock()
 
-	return !autoIndex.IsZero() && autoIndex.Sub(time.Now()) < -1*delay && !mutex.MainWorker.Busy()
+	return !autoIndex.IsZero() && autoIndex.Sub(time.Now()) < -1*delay && !mutex.MainWorker.Running()
 }
 
 // Index starts indexing originals e.g. after WebDAV uploads.
 func Index() error {
-	if mutex.MainWorker.Busy() {
+	if mutex.MainWorker.Running() {
 		return nil
 	}
 
-	conf := service.Config()
+	conf := get.Config()
 	settings := conf.Settings()
 
 	start := time.Now()
 
 	path := conf.OriginalsPath()
 
-	ind := service.Index()
+	ind := get.Index()
 
 	convert := settings.Index.Convert && conf.SidecarWritable()
 	indOpt := photoprism.NewIndexOptions(entity.RootPath, false, convert, true, false, true)
 
-	indexed := ind.Start(indOpt)
+	lastRun, lastFound := ind.LastRun()
+	found, indexed := ind.Start(indOpt)
 
-	if len(indexed) == 0 {
+	if !lastRun.IsZero() && indexed == 0 && len(found) == lastFound {
 		return nil
 	}
 
 	api.RemoveFromFolderCache(entity.RootOriginals)
 
-	prg := service.Purge()
+	prg := get.Purge()
 
 	prgOpt := photoprism.PurgeOptions{
 		Path:   filepath.Clean(entity.RootPath),
-		Ignore: indexed,
+		Ignore: found,
+		Force:  true,
 	}
 
-	if files, photos, err := prg.Start(prgOpt); err != nil {
+	if files, photos, updated, err := prg.Start(prgOpt); err != nil {
 		return err
-	} else if len(files) > 0 || len(photos) > 0 {
+	} else if updated > 0 {
 		event.InfoMsg(i18n.MsgRemovedFilesAndPhotos, len(files), len(photos))
 	}
 
@@ -88,7 +90,7 @@ func Index() error {
 		"step": "moments",
 	})
 
-	moments := service.Moments()
+	moments := get.Moments()
 
 	if err := moments.Start(); err != nil {
 		log.Warnf("moments: %s", err)

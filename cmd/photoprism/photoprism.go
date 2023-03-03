@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
+Copyright (c) 2018 - 2023 PhotoPrism UG. All rights reserved.
 
 	This program is free software: you can redistribute it and/or modify
 	it under Version 3 of the GNU Affero General Public License (the "AGPL"):
@@ -12,7 +12,7 @@ Copyright (c) 2018 - 2022 PhotoPrism UG. All rights reserved.
 
 	The AGPL is supplemented by our Trademark and Brand Guidelines,
 	which describe how our Brand Assets may be used:
-	<https://photoprism.app/trademark>
+	<https://www.photoprism.app/trademark>
 
 Feel free to send an email to hello@photoprism.app if you have questions,
 want to support our work, or just want to say hello.
@@ -36,15 +36,17 @@ var version = "development"
 var log = event.Log
 
 const appName = "PhotoPrism"
-const appEdition = "PhotoPrism® CE"
+const appAbout = "PhotoPrism® CE"
+const appEdition = "ce"
 const appDescription = "PhotoPrism® is an AI-Powered Photos App for the Decentralized Web." +
 	" It makes use of the latest technologies to tag and find pictures automatically without getting in your way." +
 	" You can run it at home, on a private server, or in the cloud."
-const appCopyright = "(c) 2018-2022 PhotoPrism UG. All rights reserved."
+const appCopyright = "(c) 2018-2023 PhotoPrism UG. All rights reserved."
 
 // Metadata contains build specific information.
 var Metadata = map[string]interface{}{
 	"Name":        appName,
+	"About":       appAbout,
 	"Edition":     appEdition,
 	"Description": appDescription,
 	"Version":     version,
@@ -58,7 +60,7 @@ func main() {
 	}()
 
 	app := cli.NewApp()
-	app.Usage = appEdition
+	app.Usage = appAbout
 	app.Description = appDescription
 	app.Version = version
 	app.Copyright = appCopyright

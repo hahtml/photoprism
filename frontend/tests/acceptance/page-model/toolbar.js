@@ -10,7 +10,7 @@ export default class Page {
     this.toolbarDescription = Selector(".v-card__text").nth(0);
     this.toolbarTitle = Selector("#p-navigation div.v-toolbar__title");
     this.toolbarSecondTitle = Selector("main.v-content div.v-toolbar__title");
-    this.openMobileToolbar = Selector("button.nav-menu-trigger");
+    this.openMobileToolbar = Selector("button.mobile-menu-trigger");
   }
 
   async checkToolbarActionAvailability(action, visible) {
@@ -25,18 +25,50 @@ export default class Page {
       if (await this.openMobileToolbar.exists) {
         await t.click(this.openMobileToolbar);
       }
-      if (await this.openMobileToolbar.exists) {
-        await t.click(this.openMobileToolbar);
-      }
-      if (visible) {
-        await t.expect(Selector("button.nav-menu-" + action).visible).ok();
-      } else {
-        await t.expect(Selector("button.nav-menu-" + action).visible).notOk();
-      }
+      await this.checkMobileMenuActionAvailability(action, visible);
+      await t.click(Selector("#photoprism"), { offsetX: 1, offsetY: 1 });
     } else if (visible) {
       await t.expect(Selector("nav.v-toolbar button.action-" + action).visible).ok();
     } else {
       await t.expect(Selector("nav.v-toolbar button.action-" + action).visible).notOk();
+    }
+  }
+
+  async checkMobileMenuActionAvailability(action, visible) {
+    if (
+      (action !== "login") &
+      (action !== "logout") &
+      (action !== "reload") &
+      (action !== "logs") &
+      (action !== "upload") &
+      (action !== "settings")
+    ) {
+      if (visible) {
+        await t.expect(Selector("#mobile-menu div.nav-" + action).visible).ok();
+      } else {
+        await t.expect(Selector("#mobile-menu div.nav-" + action).visible).notOk();
+      }
+    } else {
+      if (visible) {
+        await t.expect(Selector("#mobile-menu a.nav-" + action).visible).ok();
+      } else {
+        await t.expect(Selector("#mobile-menu a.nav-" + action).visible).notOk();
+      }
+    }
+  }
+
+  async triggerMobileMenuAction(action) {
+    if (
+      (action !== "login") &
+      (action !== "logout") &
+      (action !== "reload") &
+      (action !== "logs") &
+      (action !== "upload") &
+      (action !== "settings")
+    ) {
+      await t.click(Selector("#mobile-menu div.nav-" + action + " a"));
+    } else {
+      await t.click(Selector("#mobile-menu a.nav-" + action));
     }
   }
 
@@ -86,7 +118,7 @@ export default class Page {
         filterSelector = "div.p-countries-select";
         break;
       case "category":
-        filterSelector = ".input-category";
+        filterSelector = "div.p-category-select";
         break;
       default:
         throw "unknown filter";
@@ -94,12 +126,12 @@ export default class Page {
     if (!(await Selector(filterSelector).visible)) {
       await t.click(Selector(".p-expand-search"));
     }
-    await t.click(filterSelector, { timeout: 15000 });
+    await t.click(filterSelector);
 
     if (option) {
-      await t.click(Selector('div[role="listitem"]').withText(option), { timeout: 15000 });
+      await t.click(Selector('div[role="listitem"]').withText(option));
     } else {
-      await t.click(Selector('div[role="listitem"]').nth(1), { timeout: 15000 });
+      await t.click(Selector('div[role="listitem"]').nth(1));
     }
   }
 }

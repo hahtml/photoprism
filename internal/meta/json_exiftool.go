@@ -9,15 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/photoprism/photoprism/pkg/video"
-
-	"github.com/photoprism/photoprism/pkg/projection"
-
-	"github.com/photoprism/photoprism/pkg/clean"
-	"github.com/photoprism/photoprism/pkg/rnd"
-	"github.com/photoprism/photoprism/pkg/txt"
 	"github.com/tidwall/gjson"
 	"gopkg.in/photoprism/go-tz.v2/tz"
+
+	"github.com/photoprism/photoprism/pkg/clean"
+	"github.com/photoprism/photoprism/pkg/projection"
+	"github.com/photoprism/photoprism/pkg/rnd"
+	"github.com/photoprism/photoprism/pkg/txt"
+	"github.com/photoprism/photoprism/pkg/video"
 )
 
 const MimeVideoMP4 = "video/mp4"
@@ -33,8 +32,14 @@ func (data *Data) Exiftool(jsonData []byte, originalName string) (err error) {
 
 	j := gjson.GetBytes(jsonData, "@flatten|@join")
 
+	logName := "json file"
+
+	if originalName != "" {
+		logName = clean.Log(filepath.Base(originalName))
+	}
+
 	if !j.IsObject() {
-		return fmt.Errorf("metadata: data is not an object in %s (exiftool)", clean.Log(filepath.Base(originalName)))
+		return fmt.Errorf("metadata: data is not an object in %s (exiftool)", logName)
 	}
 
 	data.json = make(map[string]string)
@@ -46,6 +51,8 @@ func (data *Data) Exiftool(jsonData []byte, originalName string) (err error) {
 
 	if fileName, ok := data.json["FileName"]; ok && fileName != "" && originalName != "" && fileName != originalName {
 		return fmt.Errorf("metadata: original name %s does not match %s (exiftool)", clean.Log(originalName), clean.Log(fileName))
+	} else if fileName != "" && originalName == "" {
+		logName = clean.Log(filepath.Base(fileName))
 	}
 
 	v := reflect.ValueOf(data).Elem()
@@ -93,7 +100,7 @@ func (data *Data) Exiftool(jsonData []byte, originalName string) (err error) {
 					continue
 				}
 
-				fieldValue.Set(reflect.ValueOf(StringToDuration(jsonValue.String())))
+				fieldValue.Set(reflect.ValueOf(Duration(jsonValue.String())))
 			case int, int64:
 				if !fieldValue.IsZero() {
 					continue
@@ -111,7 +118,7 @@ func (data *Data) Exiftool(jsonData []byte, originalName string) (err error) {
 
 				if f := jsonValue.Float(); f != 0 {
 					fieldValue.SetFloat(f)
-				} else if f = txt.Float64(jsonValue.String()); f != 0 {
+				} else if f = txt.Float(jsonValue.String()); f != 0 {
 					fieldValue.SetFloat(f)
 				}
 			case uint, uint64:
@@ -126,22 +133,22 @@ func (data *Data) Exiftool(jsonData []byte, originalName string) (err error) {
 				}
 			case []string:
 				existing := fieldValue.Interface().([]string)
-				fieldValue.Set(reflect.ValueOf(txt.AddToWords(existing, strings.TrimSpace(jsonValue.String()))))
+				fieldValue.Set(reflect.ValueOf(txt.AddToWords(existing, SanitizeUnicode(jsonValue.String()))))
 			case Keywords:
 				existing := fieldValue.Interface().(Keywords)
-				fieldValue.Set(reflect.ValueOf(txt.AddToWords(existing, strings.TrimSpace(jsonValue.String()))))
+				fieldValue.Set(reflect.ValueOf(txt.AddToWords(existing, SanitizeUnicode(jsonValue.String()))))
 			case projection.Type:
 				if !fieldValue.IsZero() {
 					continue
 				}
 
-				fieldValue.Set(reflect.ValueOf(projection.Type(strings.TrimSpace(jsonValue.String()))))
+				fieldValue.Set(reflect.ValueOf(projection.Type(SanitizeUnicode(jsonValue.String()))))
 			case string:
 				if !fieldValue.IsZero() {
 					continue
 				}
 
-				fieldValue.SetString(strings.TrimSpace(jsonValue.String()))
+				fieldValue.SetString(SanitizeUnicode(jsonValue.String()))
 			case bool:
 				if !fieldValue.IsZero() {
 					continue
@@ -167,10 +174,10 @@ func (data *Data) Exiftool(jsonData []byte, originalName string) (err error) {
 	// Set latitude and longitude if known and not already set.
 	if data.Lat == 0 && data.Lng == 0 {
 		if data.GPSPosition != "" {
-			data.Lat, data.Lng = GpsToLatLng(data.GPSPosition)
+			lat, lng := GpsToLatLng(data.GPSPosition)
+			data.Lat, data.Lng = NormalizeGPS(lat, lng)
 		} else if data.GPSLatitude != "" && data.GPSLongitude != "" {
-			data.Lat = GpsToDecimal(data.GPSLatitude)
-			data.Lng = GpsToDecimal(data.GPSLongitude)
+			data.Lat, data.Lng = NormalizeGPS(GpsToDecimal(data.GPSLatitude), GpsToDecimal(data.GPSLongitude))
 		}
 	}
 
@@ -179,24 +186,41 @@ func (data *Data) Exiftool(jsonData []byte, originalName string) (err error) {
 		if fl := GpsFloatRegexp.FindAllString(data.json["GPSAltitude"], -1); len(fl) != 1 {
 			// Ignore.
 		} else if alt, err := strconv.ParseFloat(fl[0], 64); err == nil && alt != 0 {
-			data.Altitude = int(alt)
+			data.Altitude = alt
 		}
 	}
 
 	hasTimeOffset := false
 
-	// Fallback to GPS timestamp.
+	// Has Media Create Date?
+	if !data.CreatedAt.IsZero() {
+		data.TakenAt = data.CreatedAt
+	}
+
+	// Fallback to GPS UTC Time?
 	if data.TakenAt.IsZero() && data.TakenAtLocal.IsZero() && !data.TakenGps.IsZero() {
 		data.TimeZone = time.UTC.String()
 		data.TakenAt = data.TakenGps.UTC()
 		data.TakenAtLocal = time.Time{}
 	}
 
+	// Check plausibility of the local <> UTC time difference.
+	if !data.TakenAt.IsZero() && !data.TakenAtLocal.IsZero() {
+		if d := data.TakenAt.Sub(data.TakenAtLocal).Abs(); d > time.Hour*27 {
+			log.Infof("metadata: %s has an invalid local time offset (%s)", logName, d.String())
+			log.Debugf("metadata: %s was taken at %s, local time %s, create time %s, time zone %s", logName, clean.Log(data.TakenAt.UTC().String()), clean.Log(data.TakenAtLocal.String()), clean.Log(data.CreatedAt.String()), clean.Log(data.TimeZone))
+			data.TakenAtLocal = data.TakenAt
+			data.TakenAt = data.TakenAt.UTC()
+		}
+	}
+
+	// Has time zone offset?
 	if _, offset := data.TakenAtLocal.Zone(); offset != 0 && !data.TakenAtLocal.IsZero() {
 		hasTimeOffset = true
-	} else if mt, ok := data.json["MIMEType"]; ok && (mt == MimeVideoMP4 || mt == MimeQuicktime) {
+	} else if mt, ok := data.json["MIMEType"]; ok && data.TakenAtLocal.IsZero() && (mt == MimeVideoMP4 || mt == MimeQuicktime) {
 		// Assume default time zone for MP4 & Quicktime videos is UTC.
 		// see https://exiftool.org/TagNames/QuickTime.html
+		log.Debugf("metadata: %s uses utc by default (%s)", logName, clean.Log(mt))
 		data.TimeZone = time.UTC.String()
 		data.TakenAt = data.TakenAt.UTC()
 		data.TakenAtLocal = time.Time{}

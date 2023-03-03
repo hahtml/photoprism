@@ -5,14 +5,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/photoprism/photoprism/pkg/video"
-
 	"github.com/gin-gonic/gin"
 
+	"github.com/photoprism/photoprism/internal/get"
 	"github.com/photoprism/photoprism/internal/photoprism"
 	"github.com/photoprism/photoprism/internal/query"
-	"github.com/photoprism/photoprism/internal/service"
 	"github.com/photoprism/photoprism/pkg/clean"
+	"github.com/photoprism/photoprism/pkg/video"
 )
 
 // GetVideo streams videos.
@@ -44,7 +43,7 @@ func GetVideo(router *gin.RouterGroup) {
 		f, err := query.FileByHash(fileHash)
 
 		if err != nil {
-			log.Errorf("video: %s", err.Error())
+			log.Errorf("video: requested file not found (%s)", err)
 			c.Data(http.StatusOK, "image/svg+xml", videoIconSvg)
 			return
 		}
@@ -53,14 +52,14 @@ func GetVideo(router *gin.RouterGroup) {
 			f, err = query.VideoByPhotoUID(f.PhotoUID)
 
 			if err != nil {
-				log.Errorf("video: %s", err.Error())
+				log.Errorf("video: no playable file found (%s)", err)
 				c.Data(http.StatusOK, "image/svg+xml", videoIconSvg)
 				return
 			}
 		}
 
 		if f.FileError != "" {
-			log.Errorf("video: file error %s", f.FileError)
+			log.Errorf("video: file has error %s", f.FileError)
 			c.Data(http.StatusOK, "image/svg+xml", videoIconSvg)
 			return
 		}
@@ -72,7 +71,7 @@ func GetVideo(router *gin.RouterGroup) {
 		supported := f.FileCodec != "" && f.FileCodec == string(format.Codec) || format.Codec == video.UnknownCodec && f.FileType == string(format.File)
 
 		// File bitrate too high (for streaming)?
-		conf := service.Config()
+		conf := get.Config()
 		transcode := !supported || conf.FFmpegEnabled() && conf.FFmpegBitrateExceeded(fileBitrate)
 
 		if mf, err := photoprism.NewMediaFile(fileName); err != nil {
@@ -81,7 +80,7 @@ func GetVideo(router *gin.RouterGroup) {
 
 			// Log error and default to 404.mp4
 			log.Errorf("video: file %s is missing", clean.Log(f.FileName))
-			fileName = service.Config().StaticFile("video/404.mp4")
+			fileName = get.Config().StaticFile("video/404.mp4")
 			AddContentTypeHeader(c, ContentTypeAvc)
 		} else if transcode {
 			if f.FileCodec != "" {
@@ -90,12 +89,12 @@ func GetVideo(router *gin.RouterGroup) {
 				log.Debugf("video: %s cannot be streamed directly, average bitrate %.1f MBit/s", clean.Log(f.FileName), fileBitrate)
 			}
 
-			conv := service.Convert()
+			conv := get.Convert()
 
-			if avcFile, err := conv.ToAvc(mf, service.Config().FFmpegEncoder(), false, false); err != nil {
+			if avcFile, err := conv.ToAvc(mf, get.Config().FFmpegEncoder(), false, false); err != nil {
 				// Log error and default to 404.mp4
 				log.Errorf("video: transcoding %s failed", clean.Log(f.FileName))
-				fileName = service.Config().StaticFile("video/404.mp4")
+				fileName = get.Config().StaticFile("video/404.mp4")
 			} else {
 				fileName = avcFile.FileName()
 			}

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-# Installs Go tools on Linux
+# This installs Go tools on Linux.
 # bash <(curl -s https://raw.githubusercontent.com/photoprism/photoprism/develop/scripts/dist/install-go-tools.sh)
 
 PATH="/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin:/scripts:/usr/local/go/bin:/go/bin:$PATH"
 
-# abort if not executed as root
+# Abort if not executed as root.
 if [[ $(id -u) != "0" ]]; then
   echo "Usage: run ${0##*/} as root" 1>&2
   exit 1
@@ -36,12 +36,6 @@ echo "Installing Go tools for ${DESTARCH^^} in $GOPATH..."
 set -e
 
 mkdir -p "$GOPATH/src"
-
-# Install gosu in "/usr/local/sbin".
-echo "Installing gosu in /usr/local/sbin..."
-GOBIN="/usr/local/sbin" go install github.com/tianon/gosu@latest
-chown root:root /usr/local/sbin/gosu
-chmod 755 /usr/local/sbin/gosu
 
 # Install remaining tools in "/usr/local/bin".
 case $DESTARCH in

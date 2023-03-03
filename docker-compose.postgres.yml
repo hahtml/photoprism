@@ -1,12 +1,13 @@
 version: '3.5'
 
-# ATTENTION: PostgreSQL is NOT supported yet as Gorm (our ORM library) needs to be upgraded first.
-# The current Gorm version does NOT support compatible general data types:
-# https://github.com/photoprism/photoprism/issues/47
+## FOR TEST AND DEVELOPMENT ONLY, DO NOT USE IN PRODUCTION   ##
+## Setup: https://docs.photoprism.app/developer-guide/setup/ ##
 
 services:
   ## PhotoPrism Development Environment (PostgresSQL)
-  ## Docs: https://docs.photoprism.app/developer-guide/
+  # ATTENTION: PostgreSQL is NOT supported yet as Gorm (our ORM library) needs to be upgraded first.
+  # The current Gorm version does NOT support compatible general data types:
+  # https://github.com/photoprism/photoprism/issues/47
   photoprism:
     build: .
     image: photoprism/photoprism:develop
@@ -25,16 +26,18 @@ services:
       - "go-mod:/go/pkg/mod"
     shm_size: "2gb"
     environment:
-      PHOTOPRISM_ADMIN_PASSWORD: "photoprism"        # initial "admin" password (minimum 8 characters)
-      PHOTOPRISM_AUTH_MODE: "password"               # authentication mode (public, password)
-      PHOTOPRISM_SITE_URL: "http://localhost:2342/"
+      PHOTOPRISM_INIT: "https"
+      PHOTOPRISM_ADMIN_USER: "admin"                       # superadmin username
+      PHOTOPRISM_ADMIN_PASSWORD: "photoprism"              # initial superadmin password (minimum 8 characters)
+      PHOTOPRISM_AUTH_MODE: "password"                     # authentication mode (public, password)
+      PHOTOPRISM_SITE_URL: "http://photoprism.me:2342/"
       PHOTOPRISM_SITE_CAPTION: "AI-Powered Photos App"
       PHOTOPRISM_SITE_DESCRIPTION: "Open-Source Photo Management"
       PHOTOPRISM_SITE_AUTHOR: "@photoprism_app"
       PHOTOPRISM_DEBUG: "true"
       PHOTOPRISM_READONLY: "false"
       PHOTOPRISM_EXPERIMENTAL: "true"
-      PHOTOPRISM_SERVER_MODE: "debug"
+      PHOTOPRISM_HTTP_MODE: "debug"
       PHOTOPRISM_HTTP_HOST: "0.0.0.0"
       PHOTOPRISM_HTTP_PORT: 2342
       PHOTOPRISM_HTTP_COMPRESSION: "gzip"     # improves transfer speed and bandwidth utilization (none or gzip)
@@ -57,7 +60,7 @@ services:
       PHOTOPRISM_DISABLE_TENSORFLOW: "false"  # disables all features depending on TensorFlow
       PHOTOPRISM_DETECT_NSFW: "false"         # automatically flags photos as private that MAY be offensive (requires TensorFlow)
       PHOTOPRISM_UPLOAD_NSFW: "false"         # allows uploads that MAY be offensive (no effect without TensorFlow)
-      PHOTOPRISM_RAW_PRESETS: "false"         # enables applying user presets when converting RAW files (reduces performance)
+      PHOTOPRISM_RAW_PRESETS: "false"         # enables applying user presets when converting RAW images (reduces performance)
       PHOTOPRISM_THUMB_FILTER: "lanczos"      # resample filter, best to worst: blackman, lanczos, cubic, linear
       PHOTOPRISM_THUMB_UNCACHED: "true"       # enables on-demand thumbnail rendering (high memory and cpu usage)
       PHOTOPRISM_THUMB_SIZE: 2048             # pre-rendered thumbnail size limit (default 2048, min 720, max 7680)
